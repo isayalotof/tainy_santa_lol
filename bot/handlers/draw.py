@@ -160,7 +160,15 @@ async def confirm_draw(callback: CallbackQuery, db: Database, bot: Bot):
             msg_text += "🤫 Никому не говори!\n\n💡 Посмотреть подробный профиль получателя можно в разделе комнаты."
 
             try:
-                await bot.send_message(giver_id, msg_text)
+                # Send photo if receiver has one, otherwise send text message
+                if receiver.get('photo_file_id'):
+                    await bot.send_photo(
+                        giver_id,
+                        photo=receiver['photo_file_id'],
+                        caption=msg_text
+                    )
+                else:
+                    await bot.send_message(giver_id, msg_text)
                 success_count += 1
             except Exception as e:
                 logger.error(f"Failed to notify user {giver_id}: {e}")
