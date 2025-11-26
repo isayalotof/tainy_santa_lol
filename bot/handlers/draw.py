@@ -6,7 +6,8 @@ from bot.database import Database
 from bot.keyboards.inline import (
     get_room_menu_keyboard,
     get_confirm_draw_keyboard,
-    get_back_to_room_keyboard
+    get_back_to_room_keyboard,
+    get_receiver_profile_keyboard
 )
 from bot.utils.draw_algorithm import secret_santa_draw, validate_draw
 
@@ -128,8 +129,8 @@ async def confirm_draw(callback: CallbackQuery, db: Database, bot: Bot):
         fail_count = 0
 
         for giver_id, receiver_id in assignments.items():
-            # Get receiver info
-            receiver = db.get_user(receiver_id)
+            # Get receiver info with profile
+            receiver = db.get_user_profile(receiver_id)
             if not receiver:
                 continue
 
@@ -139,14 +140,27 @@ async def confirm_draw(callback: CallbackQuery, db: Database, bot: Bot):
             if receiver['username']:
                 receiver_name += f" (@{receiver['username']})"
 
+            # Build notification message
+            msg_text = (
+                f"🎁 Результаты жеребьёвки в комнате '{room['room_name']}'!\n\n"
+                f"Ты даришь подарок:\n"
+                f"👤 {receiver_name}\n\n"
+            )
+
+            # Add profile info
+            if receiver.get('bio'):
+                msg_text += f"📝 О получателе:\n{receiver['bio'][:150]}...\n\n" if len(receiver['bio']) > 150 else f"📝 О получателе:\n{receiver['bio']}\n\n"
+
+            if receiver.get('wishlist'):
+                msg_text += f"🎁 Список желаний:\n{receiver['wishlist'][:150]}...\n\n" if len(receiver['wishlist']) > 150 else f"🎁 Список желаний:\n{receiver['wishlist']}\n\n"
+
+            if not receiver.get('bio') and not receiver.get('wishlist'):
+                msg_text += "ℹ️ Получатель ещё не заполнил профиль.\n\n"
+
+            msg_text += "🤫 Никому не говори!\n\n💡 Посмотреть подробный профиль получателя можно в разделе комнаты."
+
             try:
-                await bot.send_message(
-                    giver_id,
-                    f"🎁 Результаты жеребьёвки в комнате '{room['room_name']}'!\n\n"
-                    f"Ты даришь подарок:\n"
-                    f"👤 {receiver_name}\n\n"
-                    f"🤫 Никому не говори!"
-                )
+                await bot.send_message(giver_id, msg_text)
                 success_count += 1
             except Exception as e:
                 logger.error(f"Failed to notify user {giver_id}: {e}")
@@ -205,17 +219,37 @@ async def show_my_receiver(callback: CallbackQuery, db: Database):
         await callback.answer("❌ Назначение не найдено", show_alert=True)
         return
 
+    receiver_id = assignment['receiver_id']
     receiver_name = assignment['first_name']
     if assignment['last_name']:
         receiver_name += f" {assignment['last_name']}"
     if assignment['username']:
         receiver_name += f" (@{assignment['username']})"
 
-    await callback.message.edit_text(
+    # Get receiver profile
+    receiver_profile = db.get_user_profile(receiver_id)
+
+    text = (
         f"🎁 Комната '{room['room_name']}'\n\n"
         f"Ты даришь подарок:\n"
         f"👤 {receiver_name}\n\n"
-        f"🤫 Никому не говори!",
-        reply_markup=get_back_to_room_keyboard(room_id)
+    )
+
+    # Add profile info if available
+    if receiver_profile:
+        if receiver_profile.get('bio'):
+            text += f"📝 О получателе:\n{receiver_profile['bio'][:200]}...\n\n" if len(receiver_profile['bio']) > 200 else f"📝 О получателе:\n{receiver_profile['bio']}\n\n"
+
+        if receiver_profile.get('wishlist'):
+            text += f"🎁 Список желаний:\n{receiver_profile['wishlist'][:200]}...\n\n" if len(receiver_profile['wishlist']) > 200 else f"🎁 Список желаний:\n{receiver_profile['wishlist']}\n\n"
+
+        if not receiver_profile.get('bio') and not receiver_profile.get('wishlist'):
+            text += "ℹ️ Получатель ещё не заполнил профиль.\n\n"
+
+    text += "🤫 Никому не говори!"
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_receiver_profile_keyboard(room_id, receiver_id)
     )
     await callback.answer()

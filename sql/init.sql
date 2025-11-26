@@ -6,7 +6,11 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(255),
     first_name VARCHAR(255),
     last_name VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    bio TEXT,
+    photo_file_id VARCHAR(255),
+    wishlist TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Rooms table

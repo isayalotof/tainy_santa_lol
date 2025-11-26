@@ -10,7 +10,7 @@ from typing import Any, Awaitable, Callable, Dict
 
 from bot.config import load_config
 from bot.database import Database
-from bot.handlers import start, rooms, draw
+from bot.handlers import start, rooms, draw, profile
 
 # Configure logging
 logging.basicConfig(
@@ -99,6 +99,7 @@ async def main():
 
     # Register routers
     dp.include_router(start.router)
+    dp.include_router(profile.router)
     dp.include_router(rooms.router)
     dp.include_router(draw.router)
 

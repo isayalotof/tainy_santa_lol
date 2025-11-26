@@ -59,6 +59,42 @@ class Database:
         result = self.execute(query, (user_id,), fetch=True)
         return result[0] if result else None
 
+    def update_user_bio(self, user_id: int, bio: str):
+        """Update user bio"""
+        query = """
+            UPDATE users
+            SET bio = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+        """
+        self.execute(query, (bio, user_id))
+
+    def update_user_photo(self, user_id: int, photo_file_id: str):
+        """Update user photo"""
+        query = """
+            UPDATE users
+            SET photo_file_id = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+        """
+        self.execute(query, (photo_file_id, user_id))
+
+    def update_user_wishlist(self, user_id: int, wishlist: str):
+        """Update user wishlist"""
+        query = """
+            UPDATE users
+            SET wishlist = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = %s
+        """
+        self.execute(query, (wishlist, user_id))
+
+    def get_user_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Get user profile with all info"""
+        query = """
+            SELECT user_id, username, first_name, last_name, bio, photo_file_id, wishlist
+            FROM users WHERE user_id = %s
+        """
+        result = self.execute(query, (user_id,), fetch=True)
+        return result[0] if result else None
+
     # Room operations
     def create_room(self, room_name: str, admin_id: int, invite_code: str) -> int:
         """Create a new room"""

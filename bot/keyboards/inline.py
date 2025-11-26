@@ -6,6 +6,9 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
     """Main menu keyboard"""
     builder = InlineKeyboardBuilder()
     builder.row(
+        InlineKeyboardButton(text="👤 Мой профиль", callback_data="my_profile")
+    )
+    builder.row(
         InlineKeyboardButton(text="🎄 Создать комнату", callback_data="create_room")
     )
     builder.row(
@@ -95,4 +98,55 @@ def get_rooms_list_keyboard(rooms: list) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="◀️ Главное меню", callback_data="main_menu")
     )
 
+    return builder.as_markup()
+
+
+def get_profile_keyboard() -> InlineKeyboardMarkup:
+    """Profile keyboard"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✏️ Редактировать профиль", callback_data="edit_profile")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Главное меню", callback_data="main_menu")
+    )
+    return builder.as_markup()
+
+
+def get_profile_edit_keyboard() -> InlineKeyboardMarkup:
+    """Profile edit menu keyboard"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📝 Изменить информацию о себе", callback_data="edit_bio")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📸 Изменить фото", callback_data="edit_photo")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🎁 Изменить список желаний", callback_data="edit_wishlist")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад к профилю", callback_data="my_profile")
+    )
+    return builder.as_markup()
+
+
+def get_back_to_profile_keyboard() -> InlineKeyboardMarkup:
+    """Back to profile keyboard"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад к профилю", callback_data="my_profile")
+    )
+    return builder.as_markup()
+
+
+def get_receiver_profile_keyboard(room_id: int, receiver_id: int) -> InlineKeyboardMarkup:
+    """Keyboard to view receiver's profile"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="👤 Профиль получателя", callback_data=f"view_profile_{receiver_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="◀️ Назад в комнату", callback_data=f"room_{room_id}")
+    )
     return builder.as_markup()
