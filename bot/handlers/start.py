@@ -78,5 +78,13 @@ async def show_main_menu(callback: CallbackQuery, state: FSMContext):
         "Выбери действие:"
     )
 
-    await callback.message.edit_text(welcome_text, reply_markup=get_main_menu_keyboard())
+    # Check if message has photo (can't edit text of photo messages)
+    if callback.message.photo:
+        # Delete old message and send new one
+        await callback.message.delete()
+        await callback.message.answer(welcome_text, reply_markup=get_main_menu_keyboard())
+    else:
+        # Edit existing text message
+        await callback.message.edit_text(welcome_text, reply_markup=get_main_menu_keyboard())
+
     await callback.answer()

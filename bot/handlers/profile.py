@@ -100,10 +100,13 @@ async def show_edit_profile_menu(callback: CallbackQuery):
         "Выбери, что хочешь изменить:"
     )
 
-    await callback.message.edit_text(
-        text,
-        reply_markup=get_profile_edit_keyboard()
-    )
+    # Check if message has photo
+    if callback.message.photo:
+        await callback.message.delete()
+        await callback.message.answer(text, reply_markup=get_profile_edit_keyboard())
+    else:
+        await callback.message.edit_text(text, reply_markup=get_profile_edit_keyboard())
+
     await callback.answer()
 
 
@@ -117,10 +120,12 @@ async def start_edit_bio(callback: CallbackQuery, state: FSMContext):
         "Максимум 500 символов."
     )
 
-    await callback.message.edit_text(
-        text,
-        reply_markup=get_back_to_profile_keyboard()
-    )
+    if callback.message.photo:
+        await callback.message.delete()
+        await callback.message.answer(text, reply_markup=get_back_to_profile_keyboard())
+    else:
+        await callback.message.edit_text(text, reply_markup=get_back_to_profile_keyboard())
+
     await state.set_state(ProfileEdit.waiting_for_bio)
     await callback.answer()
 
@@ -174,10 +179,12 @@ async def start_edit_photo(callback: CallbackQuery, state: FSMContext):
         "Отправь фото или нажми 'Назад' для отмены."
     )
 
-    await callback.message.edit_text(
-        text,
-        reply_markup=get_back_to_profile_keyboard()
-    )
+    if callback.message.photo:
+        await callback.message.delete()
+        await callback.message.answer(text, reply_markup=get_back_to_profile_keyboard())
+    else:
+        await callback.message.edit_text(text, reply_markup=get_back_to_profile_keyboard())
+
     await state.set_state(ProfileEdit.waiting_for_photo)
     await callback.answer()
 
@@ -229,10 +236,12 @@ async def start_edit_wishlist(callback: CallbackQuery, state: FSMContext):
         "Максимум 500 символов."
     )
 
-    await callback.message.edit_text(
-        text,
-        reply_markup=get_back_to_profile_keyboard()
-    )
+    if callback.message.photo:
+        await callback.message.delete()
+        await callback.message.answer(text, reply_markup=get_back_to_profile_keyboard())
+    else:
+        await callback.message.edit_text(text, reply_markup=get_back_to_profile_keyboard())
+
     await state.set_state(ProfileEdit.waiting_for_wishlist)
     await callback.answer()
 
