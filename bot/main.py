@@ -10,7 +10,7 @@ from typing import Any, Awaitable, Callable, Dict
 
 from bot.config import load_config
 from bot.database import Database
-from bot.handlers import start, rooms, draw
+from bot.handlers import start, rooms, draw, wishlist
 
 # Configure logging
 logging.basicConfig(
@@ -101,6 +101,7 @@ async def main():
     dp.include_router(start.router)
     dp.include_router(rooms.router)
     dp.include_router(draw.router)
+    dp.include_router(wishlist.router)
 
     logger.info("Bot started")
 

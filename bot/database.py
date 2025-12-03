@@ -101,6 +101,42 @@ class Database:
         """
         self.execute(query, (is_drawn, room_id))
 
+    def update_room_price_range(self, room_id: int, price_range: str = None):
+        """Update room price range"""
+        query = """
+            UPDATE rooms
+            SET price_range = %s
+            WHERE room_id = %s
+        """
+        self.execute(query, (price_range, room_id))
+
+    def update_room_deadline(self, room_id: int, deadline: str = None):
+        """Update room deadline"""
+        query = """
+            UPDATE rooms
+            SET deadline = %s
+            WHERE room_id = %s
+        """
+        self.execute(query, (deadline, room_id))
+
+    def update_room_gift_time(self, room_id: int, gift_time: str = None):
+        """Update room gift time"""
+        query = """
+            UPDATE rooms
+            SET gift_time = %s
+            WHERE room_id = %s
+        """
+        self.execute(query, (gift_time, room_id))
+
+    def update_room_gift_location(self, room_id: int, gift_location: str = None):
+        """Update room gift location"""
+        query = """
+            UPDATE rooms
+            SET gift_location = %s
+            WHERE room_id = %s
+        """
+        self.execute(query, (gift_location, room_id))
+
     # Room member operations
     def add_member_to_room(self, room_id: int, user_id: int):
         """Add user to room"""
@@ -112,11 +148,21 @@ class Database:
         self.execute(query, (room_id, user_id))
 
     def get_room_members(self, room_id: int) -> List[Dict[str, Any]]:
-        """Get all members of a room"""
+        """Get all members of a room with participation status"""
+        query = """
+            SELECT u.*, rm.is_participating FROM users u
+            JOIN room_members rm ON u.user_id = rm.user_id
+            WHERE rm.room_id = %s
+            ORDER BY rm.joined_at
+        """
+        return self.execute(query, (room_id,), fetch=True) or []
+
+    def get_room_participants(self, room_id: int) -> List[Dict[str, Any]]:
+        """Get only participating members of a room"""
         query = """
             SELECT u.* FROM users u
             JOIN room_members rm ON u.user_id = rm.user_id
-            WHERE rm.room_id = %s
+            WHERE rm.room_id = %s AND rm.is_participating = TRUE
             ORDER BY rm.joined_at
         """
         return self.execute(query, (room_id,), fetch=True) or []
@@ -127,11 +173,46 @@ class Database:
         result = self.execute(query, (room_id,), fetch=True)
         return result[0]['count'] if result else 0
 
+    def get_participant_count(self, room_id: int) -> int:
+        """Get count of participating members"""
+        query = """
+            SELECT COUNT(*) as count FROM room_members
+            WHERE room_id = %s AND is_participating = TRUE
+        """
+        result = self.execute(query, (room_id,), fetch=True)
+        return result[0]['count'] if result else 0
+
     def is_user_in_room(self, room_id: int, user_id: int) -> bool:
         """Check if user is member of room"""
         query = "SELECT 1 FROM room_members WHERE room_id = %s AND user_id = %s"
         result = self.execute(query, (room_id, user_id), fetch=True)
         return bool(result)
+
+    def set_participation(self, room_id: int, user_id: int, is_participating: bool):
+        """Set participation status for a user in a room"""
+        query = """
+            UPDATE room_members
+            SET is_participating = %s
+            WHERE room_id = %s AND user_id = %s
+        """
+        self.execute(query, (is_participating, room_id, user_id))
+
+    def remove_member_from_room(self, room_id: int, user_id: int):
+        """Remove user from room"""
+        # Delete wishlist items
+        query = "DELETE FROM wishlist_items WHERE room_id = %s AND user_id = %s"
+        self.execute(query, (room_id, user_id))
+        
+        # Delete assignments if any
+        query = """
+            DELETE FROM assignments
+            WHERE room_id = %s AND (giver_id = %s OR receiver_id = %s)
+        """
+        self.execute(query, (room_id, user_id, user_id))
+        
+        # Remove from room
+        query = "DELETE FROM room_members WHERE room_id = %s AND user_id = %s"
+        self.execute(query, (room_id, user_id))
 
     # Assignment operations
     def create_assignment(self, room_id: int, giver_id: int, receiver_id: int):
@@ -162,3 +243,58 @@ class Database:
         """Delete all assignments for a room"""
         query = "DELETE FROM assignments WHERE room_id = %s"
         self.execute(query, (room_id,))
+
+    # Wishlist operations
+    def add_wishlist_item(self, room_id: int, user_id: int, item_name: str, item_url: str = None) -> int:
+        """Add item to user's wishlist for a room"""
+        query = """
+            INSERT INTO wishlist_items (room_id, user_id, item_name, item_url)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+        """
+        result = self.execute(query, (room_id, user_id, item_name, item_url), fetch=True)
+        return result[0]['id'] if result else None
+
+    def get_wishlist_items(self, room_id: int, user_id: int) -> List[Dict[str, Any]]:
+        """Get all wishlist items for a user in a room"""
+        query = """
+            SELECT * FROM wishlist_items
+            WHERE room_id = %s AND user_id = %s
+            ORDER BY created_at ASC
+        """
+        return self.execute(query, (room_id, user_id), fetch=True) or []
+
+    def get_wishlist_item(self, item_id: int) -> Optional[Dict[str, Any]]:
+        """Get wishlist item by ID"""
+        query = "SELECT * FROM wishlist_items WHERE id = %s"
+        result = self.execute(query, (item_id,), fetch=True)
+        return result[0] if result else None
+
+    def update_wishlist_item(self, item_id: int, item_name: str = None, item_url: str = None):
+        """Update wishlist item"""
+        updates = []
+        params = []
+        
+        if item_name is not None:
+            updates.append("item_name = %s")
+            params.append(item_name)
+        if item_url is not None:
+            updates.append("item_url = %s")
+            params.append(item_url)
+        
+        if not updates:
+            return
+        
+        params.append(item_id)
+        query = f"UPDATE wishlist_items SET {', '.join(updates)} WHERE id = %s"
+        self.execute(query, tuple(params))
+
+    def delete_wishlist_item(self, item_id: int):
+        """Delete wishlist item"""
+        query = "DELETE FROM wishlist_items WHERE id = %s"
+        self.execute(query, (item_id,))
+
+    def delete_user_wishlist(self, room_id: int, user_id: int):
+        """Delete all wishlist items for a user in a room"""
+        query = "DELETE FROM wishlist_items WHERE room_id = %s AND user_id = %s"
+        self.execute(query, (room_id, user_id))

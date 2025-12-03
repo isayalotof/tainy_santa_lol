@@ -29,9 +29,9 @@ async def start_draw(callback: CallbackQuery, db: Database):
         await callback.answer("❌ Только администратор может провести жеребьёвку", show_alert=True)
         return
 
-    # Check member count
-    member_count = db.get_room_member_count(room_id)
-    if member_count < 2:
+    # Check participant count
+    participant_count = db.get_participant_count(room_id)
+    if participant_count < 2:
         await callback.answer(
             "❌ Для жеребьёвки нужно минимум 2 участника",
             show_alert=True
@@ -40,7 +40,7 @@ async def start_draw(callback: CallbackQuery, db: Database):
 
     await callback.message.edit_text(
         f"🎲 Провести жеребьёвку для комнаты '{room['room_name']}'?\n\n"
-        f"👥 Участников: {member_count}\n\n"
+        f"👥 Участников: {participant_count}\n\n"
         f"⚠️ После жеребьёвки каждый участник получит уведомление о том, кому он дарит подарок.",
         reply_markup=get_confirm_draw_keyboard(room_id)
     )
@@ -62,9 +62,9 @@ async def start_redraw(callback: CallbackQuery, db: Database):
         await callback.answer("❌ Только администратор может провести жеребьёвку", show_alert=True)
         return
 
-    # Check member count
-    member_count = db.get_room_member_count(room_id)
-    if member_count < 2:
+    # Check participant count
+    participant_count = db.get_participant_count(room_id)
+    if participant_count < 2:
         await callback.answer(
             "❌ Для жеребьёвки нужно минимум 2 участника",
             show_alert=True
@@ -73,7 +73,7 @@ async def start_redraw(callback: CallbackQuery, db: Database):
 
     await callback.message.edit_text(
         f"♻️ Перепровести жеребьёвку для комнаты '{room['room_name']}'?\n\n"
-        f"👥 Участников: {member_count}\n\n"
+        f"👥 Участников: {participant_count}\n\n"
         f"⚠️ Предыдущие назначения будут удалены!\n"
         f"Каждый участник получит новое уведомление.",
         reply_markup=get_confirm_draw_keyboard(room_id)
@@ -97,8 +97,8 @@ async def confirm_draw(callback: CallbackQuery, db: Database, bot: Bot):
         return
 
     try:
-        # Get all room members
-        members = db.get_room_members(room_id)
+        # Get only participating members
+        members = db.get_room_participants(room_id)
         member_ids = [member['user_id'] for member in members]
 
         if len(member_ids) < 2:
@@ -140,12 +140,46 @@ async def confirm_draw(callback: CallbackQuery, db: Database, bot: Bot):
                 receiver_name += f" (@{receiver['username']})"
 
             try:
-                await bot.send_message(
-                    giver_id,
+                message_text = (
                     f"🎁 Результаты жеребьёвки в комнате '{room['room_name']}'!\n\n"
                     f"Ты даришь подарок:\n"
                     f"👤 {receiver_name}\n\n"
-                    f"🤫 Никому не говори!"
+                )
+                
+                if room.get('price_range'):
+                    message_text += f"💰 Ценовой диапазон: {room['price_range']}\n\n"
+                
+                # Get receiver's wishlist
+                wishlist_items = db.get_wishlist_items(room_id, receiver_id)
+                
+                if wishlist_items:
+                    message_text += "📋 Вишлист получателя:\n\n"
+                    for i, item in enumerate(wishlist_items, 1):
+                        message_text += f"{i}. {item['item_name']}"
+                        if item['item_url']:
+                            message_text += f"\n   🔗 {item['item_url']}"
+                        message_text += "\n"
+                    message_text += "\n"
+                else:
+                    message_text += "📋 Вишлист получателя пуст\n\n"
+                
+                if room.get('deadline'):
+                    message_text += f"⏰ Дедлайн жеребьёвки: {room['deadline']}\n\n"
+                
+                if room.get('gift_time') or room.get('gift_location'):
+                    message_text += "📅 Информация о вручении:\n"
+                    if room.get('gift_time'):
+                        message_text += f"   📅 Время: {room['gift_time']}\n"
+                    if room.get('gift_location'):
+                        message_text += f"   📍 Место: {room['gift_location']}\n"
+                    message_text += "\n"
+                
+                message_text += f"🤫 Никому не говори!"
+                
+                await bot.send_message(
+                    giver_id, 
+                    message_text,
+                    disable_web_page_preview=False
                 )
                 success_count += 1
             except Exception as e:
@@ -211,11 +245,46 @@ async def show_my_receiver(callback: CallbackQuery, db: Database):
     if assignment['username']:
         receiver_name += f" (@{assignment['username']})"
 
-    await callback.message.edit_text(
+    text = (
         f"🎁 Комната '{room['room_name']}'\n\n"
         f"Ты даришь подарок:\n"
         f"👤 {receiver_name}\n\n"
-        f"🤫 Никому не говори!",
-        reply_markup=get_back_to_room_keyboard(room_id)
+    )
+    
+    if room.get('price_range'):
+        text += f"💰 Ценовой диапазон: {room['price_range']}\n\n"
+    
+    # Get receiver's wishlist
+    receiver_id = assignment['user_id']
+    wishlist_items = db.get_wishlist_items(room_id, receiver_id)
+    
+    if wishlist_items:
+        text += "📋 Вишлист получателя:\n\n"
+        for i, item in enumerate(wishlist_items, 1):
+            text += f"{i}. {item['item_name']}"
+            if item['item_url']:
+                text += f"\n   🔗 {item['item_url']}"
+            text += "\n"
+        text += "\n"
+    else:
+        text += "📋 Вишлист получателя пуст\n\n"
+    
+    if room.get('deadline'):
+        text += f"⏰ Дедлайн жеребьёвки: {room['deadline']}\n\n"
+    
+    if room.get('gift_time') or room.get('gift_location'):
+        text += "📅 Информация о вручении:\n"
+        if room.get('gift_time'):
+            text += f"   📅 Время: {room['gift_time']}\n"
+        if room.get('gift_location'):
+            text += f"   📍 Место: {room['gift_location']}\n"
+        text += "\n"
+    
+    text += f"🤫 Никому не говори!"
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_back_to_room_keyboard(room_id),
+        disable_web_page_preview=False
     )
     await callback.answer()

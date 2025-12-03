@@ -28,6 +28,15 @@ def get_room_menu_keyboard(room_id: int, is_admin: bool, is_drawn: bool) -> Inli
         builder.row(
             InlineKeyboardButton(text="🔗 Пригласительная ссылка", callback_data=f"invite_{room_id}")
         )
+        builder.row(
+            InlineKeyboardButton(text="💰 Установить ценовой диапазон", callback_data=f"set_price_range_{room_id}")
+        )
+        builder.row(
+            InlineKeyboardButton(text="⏰ Установить дедлайн", callback_data=f"set_deadline_{room_id}")
+        )
+        builder.row(
+            InlineKeyboardButton(text="📅 Время и место вручения", callback_data=f"gift_info_{room_id}")
+        )
 
         if not is_drawn:
             builder.row(
@@ -38,13 +47,73 @@ def get_room_menu_keyboard(room_id: int, is_admin: bool, is_drawn: bool) -> Inli
                 InlineKeyboardButton(text="♻️ Перепровести жеребьёвку", callback_data=f"redraw_{room_id}")
             )
 
+    builder.row(
+        InlineKeyboardButton(text="📋 Мой вишлист", callback_data=f"wishlist_{room_id}")
+            )
+
     if is_drawn:
         builder.row(
             InlineKeyboardButton(text="🎁 Узнать кому дарить", callback_data=f"my_receiver_{room_id}")
         )
 
     builder.row(
+        InlineKeyboardButton(text="🚪 Выйти из комнаты", callback_data=f"leave_room_{room_id}")
+        )
+
+    builder.row(
         InlineKeyboardButton(text="◀️ Назад", callback_data="my_rooms")
+    )
+
+    return builder.as_markup()
+
+
+def get_members_management_keyboard(room_id: int) -> InlineKeyboardMarkup:
+    """Keyboard for managing room members"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="🗑️ Удалить участника",
+            callback_data=f"remove_member_{room_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="👤 Управление участием",
+            callback_data=f"manage_participation_{room_id}"
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="◀️ Назад в комнату",
+            callback_data=f"room_{room_id}"
+        )
+    )
+    return builder.as_markup()
+
+
+def get_member_list_keyboard(room_id: int, members: list, action: str) -> InlineKeyboardMarkup:
+    """Keyboard for selecting a member"""
+    builder = InlineKeyboardBuilder()
+    
+    for member in members:
+        name = member['first_name']
+        if member.get('last_name'):
+            name += f" {member['last_name']}"
+        if len(name) > 30:
+            name = name[:27] + "..."
+        
+        builder.row(
+            InlineKeyboardButton(
+                text=name,
+                callback_data=f"{action}_{member['user_id']}"
+            )
+        )
+    
+    builder.row(
+        InlineKeyboardButton(
+            text="◀️ Назад",
+            callback_data=f"members_{room_id}"
+        )
     )
 
     return builder.as_markup()

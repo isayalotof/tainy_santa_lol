@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS rooms (
     admin_id BIGINT NOT NULL REFERENCES users(user_id),
     invite_code VARCHAR(50) UNIQUE NOT NULL,
     is_drawn BOOLEAN DEFAULT FALSE,
+    price_range VARCHAR(255),
+    deadline VARCHAR(255),
+    gift_time VARCHAR(255),
+    gift_location VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     drawn_at TIMESTAMP
 );
@@ -25,6 +29,7 @@ CREATE TABLE IF NOT EXISTS room_members (
     id SERIAL PRIMARY KEY,
     room_id INTEGER NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
     user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    is_participating BOOLEAN DEFAULT TRUE,
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(room_id, user_id)
 );
@@ -39,9 +44,20 @@ CREATE TABLE IF NOT EXISTS assignments (
     UNIQUE(room_id, giver_id)
 );
 
+-- Wishlist items table
+CREATE TABLE IF NOT EXISTS wishlist_items (
+    id SERIAL PRIMARY KEY,
+    room_id INTEGER NOT NULL REFERENCES rooms(room_id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    item_name VARCHAR(255) NOT NULL,
+    item_url VARCHAR(500),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_room_members_room ON room_members(room_id);
 CREATE INDEX IF NOT EXISTS idx_room_members_user ON room_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_room ON assignments(room_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_giver ON assignments(giver_id);
 CREATE INDEX IF NOT EXISTS idx_rooms_invite_code ON rooms(invite_code);
+CREATE INDEX IF NOT EXISTS idx_wishlist_room_user ON wishlist_items(room_id, user_id);
