@@ -67,3 +67,16 @@ CREATE INDEX IF NOT EXISTS idx_rooms_admin ON rooms(admin_id);
 CREATE INDEX IF NOT EXISTS idx_wishlist_room_user ON wishlist_items(room_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_wishlist_user ON wishlist_items(user_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL;
+
+-- Security settings
+-- Limit connections per user
+ALTER ROLE postgres WITH CONNECTION LIMIT 50;
+
+-- Enable logging for security monitoring
+ALTER SYSTEM SET log_connections = 'on';
+ALTER SYSTEM SET log_disconnections = 'on';
+ALTER SYSTEM SET log_authentication_failures = 'on';
+ALTER SYSTEM SET log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h ';
+
+-- Set authentication timeout
+ALTER SYSTEM SET authentication_timeout = '10s';

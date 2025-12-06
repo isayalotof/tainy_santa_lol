@@ -9,13 +9,18 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5432:5432"
+    # Убираем проброс порта наружу - доступ только из внутренней сети Docker
+    # Это защищает от брутфорса из интернета
+    # ports:
+    #   - "5432:5432"
+    # Если нужен доступ извне, используйте SSH туннель или VPN
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - internal
 
   bot:
     build: .
@@ -31,6 +36,13 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+    internal: false  # Allow outbound connections for bot API
 
 volumes:
   postgres_data:
