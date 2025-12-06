@@ -1,44 +1,70 @@
 import psycopg2
+from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 from typing import Optional, List, Dict, Any
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
 
 class Database:
-    def __init__(self, dsn: str):
+    def __init__(self, dsn: str, min_conn: int = 1, max_conn: int = 10):
         self.dsn = dsn
-        self.conn = None
+        self.connection_pool = None
+        self.min_conn = min_conn
+        self.max_conn = max_conn
+        self._lock = threading.Lock()
 
     def connect(self):
-        """Establish database connection"""
+        """Establish database connection pool"""
         try:
-            self.conn = psycopg2.connect(self.dsn)
-            logger.info("Database connection established")
+            self.connection_pool = pool.ThreadedConnectionPool(
+                self.min_conn,
+                self.max_conn,
+                self.dsn
+            )
+            logger.info(f"Database connection pool established ({self.min_conn}-{self.max_conn} connections)")
         except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
+            logger.error(f"Failed to create connection pool: {e}")
             raise
 
     def close(self):
-        """Close database connection"""
-        if self.conn:
-            self.conn.close()
-            logger.info("Database connection closed")
+        """Close database connection pool"""
+        if self.connection_pool:
+            self.connection_pool.closeall()
+            logger.info("Database connection pool closed")
+
+    def _get_connection(self):
+        """Get connection from pool"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool not initialized")
+        return self.connection_pool.getconn()
+
+    def _put_connection(self, conn):
+        """Return connection to pool"""
+        if self.connection_pool:
+            self.connection_pool.putconn(conn)
 
     def execute(self, query: str, params: tuple = None, fetch: bool = False) -> Optional[List[Dict[str, Any]]]:
-        """Execute SQL query"""
+        """Execute SQL query using connection pool"""
+        conn = None
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            conn = self._get_connection()
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, params)
-                self.conn.commit()
+                conn.commit()
                 if fetch:
                     return [dict(row) for row in cur.fetchall()]
                 return None
         except Exception as e:
-            self.conn.rollback()
+            if conn:
+                conn.rollback()
             logger.error(f"Database error: {e}")
             raise
+        finally:
+            if conn:
+                self._put_connection(conn)
 
     # User operations
     def add_user(self, user_id: int, username: str = None, first_name: str = None, last_name: str = None):
@@ -237,6 +263,29 @@ class Database:
     def get_room_assignments(self, room_id: int) -> List[Dict[str, Any]]:
         """Get all assignments for a room"""
         query = "SELECT * FROM assignments WHERE room_id = %s"
+        return self.execute(query, (room_id,), fetch=True) or []
+
+    def get_room_assignments_with_users(self, room_id: int) -> List[Dict[str, Any]]:
+        """Get all assignments for a room with giver and receiver user info"""
+        query = """
+            SELECT 
+                a.room_id,
+                a.giver_id,
+                a.receiver_id,
+                giver.user_id as giver_user_id,
+                giver.username as giver_username,
+                giver.first_name as giver_first_name,
+                giver.last_name as giver_last_name,
+                receiver.user_id as receiver_user_id,
+                receiver.username as receiver_username,
+                receiver.first_name as receiver_first_name,
+                receiver.last_name as receiver_last_name
+            FROM assignments a
+            JOIN users giver ON a.giver_id = giver.user_id
+            JOIN users receiver ON a.receiver_id = receiver.user_id
+            WHERE a.room_id = %s
+            ORDER BY giver.first_name, giver.last_name
+        """
         return self.execute(query, (room_id,), fetch=True) or []
 
     def delete_room_assignments(self, room_id: int):

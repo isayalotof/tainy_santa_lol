@@ -13,7 +13,8 @@ from bot.keyboards.inline import (
     get_back_to_room_keyboard,
     get_back_to_menu_keyboard,
     get_members_management_keyboard,
-    get_member_list_keyboard
+    get_member_list_keyboard,
+    get_assignments_paginated_keyboard
 )
 
 router = Router()
@@ -181,7 +182,7 @@ async def show_room_details(callback: CallbackQuery, db: Database):
 
 @router.callback_query(F.data.startswith("members_"))
 async def show_room_members(callback: CallbackQuery, db: Database):
-    """Show room members"""
+    """Show room members with pagination"""
     room_id = int(callback.data.split("_")[1])
 
     room = db.get_room_by_id(room_id)
@@ -195,10 +196,18 @@ async def show_room_members(callback: CallbackQuery, db: Database):
         return
 
     members = db.get_room_members(room_id)
+    total = len(members)
+    
+    # Show first page (first 10 members in text, all in management)
+    per_page = 10
+    page_members = members[:per_page]
 
     text = f"👥 Участники комнаты '{room['room_name']}':\n\n"
+    
+    if total > per_page:
+        text += f"Показано {len(page_members)} из {total} участников\n\n"
 
-    for i, member in enumerate(members, 1):
+    for i, member in enumerate(page_members, 1):
         name = member['first_name']
         if member['last_name']:
             name += f" {member['last_name']}"
@@ -208,6 +217,9 @@ async def show_room_members(callback: CallbackQuery, db: Database):
         admin_mark = " 👑" if member['user_id'] == room['admin_id'] else ""
         participation = " ✅" if member.get('is_participating', True) else " ❌"
         text += f"{i}. {name}{admin_mark}{participation}\n"
+    
+    if total > per_page:
+        text += f"\n... и ещё {total - per_page} участников\n"
 
     text += "\n✅ - участвует в жеребьёвке\n❌ - не участвует"
 
@@ -453,10 +465,58 @@ async def start_remove_member(callback: CallbackQuery, db: Database):
         await callback.answer("❌ Нет участников для удаления", show_alert=True)
         return
     
+    total = len(members)
+    page = 0
+    per_page = 10
+    total_pages = (total + per_page - 1) // per_page
+    page_info = f" (стр. {page + 1}/{total_pages})" if total > per_page else ""
+    
     await callback.message.edit_text(
-        f"🗑️ Удаление участника из комнаты '{room['room_name']}'\n\n"
+        f"🗑️ Удаление участника из комнаты '{room['room_name']}'{page_info}\n\n"
         f"Выбери участника для удаления:",
-        reply_markup=get_member_list_keyboard(room_id, members, "remove_user")
+        reply_markup=get_member_list_keyboard(room_id, members, "remove_user", page, per_page)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("remove_user_page_"))
+async def remove_member_page(callback: CallbackQuery, db: Database):
+    """Handle pagination for remove member"""
+    # Parse: remove_user_page_{room_id}_{page}
+    parts = callback.data.split("_")
+    if len(parts) < 5:
+        await callback.answer("❌ Ошибка формата", show_alert=True)
+        return
+    
+    try:
+        room_id = int(parts[3])
+        page = int(parts[4])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Ошибка формата", show_alert=True)
+        return
+    
+    room = db.get_room_by_id(room_id)
+    if not room or room['admin_id'] != callback.from_user.id:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    members = db.get_room_members(room_id)
+    members = [m for m in members if m['user_id'] != room['admin_id']]
+    
+    total = len(members)
+    per_page = 10
+    total_pages = (total + per_page - 1) // per_page
+    
+    if page < 0 or page >= total_pages:
+        await callback.answer("❌ Неверная страница", show_alert=True)
+        return
+    
+    page_info = f" (стр. {page + 1}/{total_pages})" if total > per_page else ""
+    
+    await callback.message.edit_text(
+        f"🗑️ Удаление участника из комнаты '{room['room_name']}'{page_info}\n\n"
+        f"Выбери участника для удаления:",
+        reply_markup=get_member_list_keyboard(room_id, members, "remove_user", page, per_page)
     )
     await callback.answer()
 
@@ -464,21 +524,23 @@ async def start_remove_member(callback: CallbackQuery, db: Database):
 @router.callback_query(F.data.startswith("remove_user_"))
 async def confirm_remove_member(callback: CallbackQuery, db: Database):
     """Remove member from room"""
-    user_id = int(callback.data.split("_")[2])
+    # Parse: remove_user_{room_id}_{user_id}
+    parts = callback.data.split("_")
+    if len(parts) < 4:
+        await callback.answer("❌ Ошибка формата", show_alert=True)
+        return
     
-    # Find room where this user is a member
-    rooms = db.get_user_rooms(callback.from_user.id)
-    target_room = None
+    room_id = int(parts[2])
+    user_id = int(parts[3])
     
-    for room in rooms:
-        if db.is_user_in_room(room['room_id'], user_id):
-            room_data = db.get_room_by_id(room['room_id'])
-            if room_data and room_data['admin_id'] == callback.from_user.id:
-                target_room = room_data
-                break
-    
+    # Get room and verify admin access
+    target_room = db.get_room_by_id(room_id)
     if not target_room:
         await callback.answer("❌ Комната не найдена", show_alert=True)
+        return
+    
+    if target_room['admin_id'] != callback.from_user.id:
+        await callback.answer("❌ Только администратор может удалять участников", show_alert=True)
         return
     
     if user_id == target_room['admin_id']:
@@ -496,7 +558,9 @@ async def confirm_remove_member(callback: CallbackQuery, db: Database):
         text = f"✅ Участник {user_name} удалён из комнаты '{target_room['room_name']}'\n\n"
         text += f"👥 Участники комнаты:\n\n"
         
-        for i, member in enumerate(members, 1):
+        # Show only first 10 members to avoid long messages
+        display_members = members[:10]
+        for i, member in enumerate(display_members, 1):
             name = member['first_name']
             if member.get('last_name'):
                 name += f" {member['last_name']}"
@@ -507,7 +571,14 @@ async def confirm_remove_member(callback: CallbackQuery, db: Database):
             participation = " ✅" if member.get('is_participating', True) else " ❌"
             text += f"{i}. {name}{admin_mark}{participation}\n"
         
+        if len(members) > 10:
+            text += f"\n... и ещё {len(members) - 10} участников\n"
+        
         text += "\n✅ - участвует в жеребьёвке\n❌ - не участвует"
+        
+        # Check message length
+        if len(text) > 4096:
+            text = text[:4000] + "\n\n... (список обрезан)"
         
         await callback.message.edit_text(
             text,
@@ -536,11 +607,55 @@ async def start_manage_participation(callback: CallbackQuery, db: Database):
         return
     
     members = db.get_room_members(room_id)
+    total = len(members)
+    page = 0
+    per_page = 10
+    page_info = f" (стр. {page + 1}/{(total + per_page - 1) // per_page})" if total > per_page else ""
     
     await callback.message.edit_text(
-        f"👤 Управление участием в комнате '{room['room_name']}'\n\n"
+        f"👤 Управление участием в комнате '{room['room_name']}'{page_info}\n\n"
         f"Выбери участника для изменения статуса участия:",
-        reply_markup=get_member_list_keyboard(room_id, members, "toggle_participation")
+        reply_markup=get_member_list_keyboard(room_id, members, "toggle_participation", page, per_page)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("toggle_participation_page_"))
+async def toggle_participation_page(callback: CallbackQuery, db: Database):
+    """Handle pagination for toggle participation"""
+    # Parse: toggle_participation_page_{room_id}_{page}
+    parts = callback.data.split("_")
+    if len(parts) < 5:
+        await callback.answer("❌ Ошибка формата", show_alert=True)
+        return
+    
+    try:
+        room_id = int(parts[3])
+        page = int(parts[4])
+    except (ValueError, IndexError):
+        await callback.answer("❌ Ошибка формата", show_alert=True)
+        return
+    
+    room = db.get_room_by_id(room_id)
+    if not room or room['admin_id'] != callback.from_user.id:
+        await callback.answer("❌ Доступ запрещён", show_alert=True)
+        return
+    
+    members = db.get_room_members(room_id)
+    total = len(members)
+    per_page = 10
+    total_pages = (total + per_page - 1) // per_page
+    
+    if page < 0 or page >= total_pages:
+        await callback.answer("❌ Неверная страница", show_alert=True)
+        return
+    
+    page_info = f" (стр. {page + 1}/{total_pages})" if total > per_page else ""
+    
+    await callback.message.edit_text(
+        f"👤 Управление участием в комнате '{room['room_name']}'{page_info}\n\n"
+        f"Выбери участника для изменения статуса участия:",
+        reply_markup=get_member_list_keyboard(room_id, members, "toggle_participation", page, per_page)
     )
     await callback.answer()
 
@@ -548,21 +663,23 @@ async def start_manage_participation(callback: CallbackQuery, db: Database):
 @router.callback_query(F.data.startswith("toggle_participation_"))
 async def toggle_participation(callback: CallbackQuery, db: Database):
     """Toggle participation status"""
-    user_id = int(callback.data.split("_")[2])
+    # Parse: toggle_participation_{room_id}_{user_id}
+    parts = callback.data.split("_")
+    if len(parts) < 4:
+        await callback.answer("❌ Ошибка формата", show_alert=True)
+        return
     
-    # Find room
-    rooms = db.get_user_rooms(callback.from_user.id)
-    target_room = None
+    room_id = int(parts[2])
+    user_id = int(parts[3])
     
-    for room in rooms:
-        if db.is_user_in_room(room['room_id'], user_id):
-            room_data = db.get_room_by_id(room['room_id'])
-            if room_data and room_data['admin_id'] == callback.from_user.id:
-                target_room = room_data
-                break
-    
+    # Get room and verify admin access
+    target_room = db.get_room_by_id(room_id)
     if not target_room:
         await callback.answer("❌ Комната не найдена", show_alert=True)
+        return
+    
+    if target_room['admin_id'] != callback.from_user.id:
+        await callback.answer("❌ Только администратор может управлять участием", show_alert=True)
         return
     
     # Get current participation status
@@ -590,7 +707,9 @@ async def toggle_participation(callback: CallbackQuery, db: Database):
         text += f"{user_name} теперь {status_text} в жеребьёвке.\n\n"
         text += f"👥 Участники комнаты '{target_room['room_name']}':\n\n"
         
-        for i, m in enumerate(members, 1):
+        # Show only first 10 members to avoid long messages
+        display_members = members[:10]
+        for i, m in enumerate(display_members, 1):
             name = m['first_name']
             if m.get('last_name'):
                 name += f" {m['last_name']}"
@@ -601,7 +720,14 @@ async def toggle_participation(callback: CallbackQuery, db: Database):
             participation = " ✅" if m.get('is_participating', True) else " ❌"
             text += f"{i}. {name}{admin_mark}{participation}\n"
         
+        if len(members) > 10:
+            text += f"\n... и ещё {len(members) - 10} участников\n"
+        
         text += "\n✅ - участвует в жеребьёвке\n❌ - не участвует"
+        
+        # Check message length
+        if len(text) > 4096:
+            text = text[:4000] + "\n\n... (список обрезан)"
         
         await callback.message.edit_text(
             text,
@@ -915,5 +1041,92 @@ async def process_gift_location(message: Message, state: FSMContext, db: Databas
         logger.error(f"Error setting gift location: {e}")
         await message.answer("❌ Ошибка при установке места")
         await state.clear()
+
+
+@router.callback_query(F.data.startswith("view_assignments_"))
+async def view_assignments(callback: CallbackQuery, db: Database):
+    """Show all Secret Santa assignments for admin with pagination"""
+    parts = callback.data.split("_")
+    if len(parts) < 3:
+        await callback.answer("❌ Ошибка формата", show_alert=True)
+        return
+    
+    try:
+        room_id = int(parts[2])
+        page = int(parts[3]) if len(parts) > 3 else 0
+    except (ValueError, IndexError):
+        await callback.answer("❌ Ошибка формата", show_alert=True)
+        return
+    
+    room = db.get_room_by_id(room_id)
+    if not room:
+        await callback.answer("❌ Комната не найдена", show_alert=True)
+        return
+    
+    # Check if user is admin
+    if room['admin_id'] != callback.from_user.id:
+        await callback.answer("❌ Только администратор может просматривать назначения", show_alert=True)
+        return
+    
+    # Check if draw was done
+    if not room['is_drawn']:
+        await callback.answer("❌ Жеребьёвка ещё не проведена", show_alert=True)
+        return
+    
+    # Get all assignments with user info
+    assignments = db.get_room_assignments_with_users(room_id)
+    
+    if not assignments:
+        await callback.answer("❌ Назначения не найдены", show_alert=True)
+        return
+    
+    # Pagination
+    per_page = 10
+    total = len(assignments)
+    total_pages = (total + per_page - 1) // per_page
+    
+    if page < 0 or page >= total_pages:
+        await callback.answer("❌ Неверная страница", show_alert=True)
+        return
+    
+    start = page * per_page
+    end = min(start + per_page, total)
+    page_assignments = assignments[start:end]
+    
+    text = f"👀 Назначения в комнате '{room['room_name']}'\n\n"
+    if total > per_page:
+        text += f"Страница {page + 1} из {total_pages}\n\n"
+    text += "🎁 Кто кому дарит подарки:\n\n"
+    
+    for i, assignment in enumerate(page_assignments, start=start + 1):
+        # Format giver name
+        giver_name = assignment['giver_first_name']
+        if assignment.get('giver_last_name'):
+            giver_name += f" {assignment['giver_last_name']}"
+        if assignment.get('giver_username'):
+            giver_name += f" (@{assignment['giver_username']})"
+        
+        # Format receiver name
+        receiver_name = assignment['receiver_first_name']
+        if assignment.get('receiver_last_name'):
+            receiver_name += f" {assignment['receiver_last_name']}"
+        if assignment.get('receiver_username'):
+            receiver_name += f" (@{assignment['receiver_username']})"
+        
+        text += f"{i}. {giver_name}\n"
+        text += f"   → {receiver_name}\n\n"
+    
+    text += "🤫 Эта информация видна только администратору!"
+    
+    # Check message length (Telegram limit is 4096)
+    if len(text) > 4096:
+        # Truncate if too long
+        text = text[:4000] + "\n\n... (сообщение обрезано)"
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=get_assignments_paginated_keyboard(room_id, page, total_pages)
+    )
+    await callback.answer()
 
 

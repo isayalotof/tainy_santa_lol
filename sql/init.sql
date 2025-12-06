@@ -57,7 +57,13 @@ CREATE TABLE IF NOT EXISTS wishlist_items (
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_room_members_room ON room_members(room_id);
 CREATE INDEX IF NOT EXISTS idx_room_members_user ON room_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_room_members_participating ON room_members(room_id, is_participating) WHERE is_participating = TRUE;
 CREATE INDEX IF NOT EXISTS idx_assignments_room ON assignments(room_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_giver ON assignments(giver_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_receiver ON assignments(receiver_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_room_giver ON assignments(room_id, giver_id);
 CREATE INDEX IF NOT EXISTS idx_rooms_invite_code ON rooms(invite_code);
+CREATE INDEX IF NOT EXISTS idx_rooms_admin ON rooms(admin_id);
 CREATE INDEX IF NOT EXISTS idx_wishlist_room_user ON wishlist_items(room_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_wishlist_user ON wishlist_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL;

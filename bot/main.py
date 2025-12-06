@@ -37,24 +37,32 @@ class DatabaseMiddleware:
         data['db'] = self.db
 
         # Add user to database if message or callback query
-        if event.message and event.message.from_user:
-            user = event.message.from_user
-            self.db.add_user(
-                user_id=user.id,
-                username=user.username,
-                first_name=user.first_name,
-                last_name=user.last_name
-            )
-        elif event.callback_query and event.callback_query.from_user:
-            user = event.callback_query.from_user
-            self.db.add_user(
-                user_id=user.id,
-                username=user.username,
-                first_name=user.first_name,
-                last_name=user.last_name
-            )
+        try:
+            if event.message and event.message.from_user:
+                user = event.message.from_user
+                self.db.add_user(
+                    user_id=user.id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name
+                )
+            elif event.callback_query and event.callback_query.from_user:
+                user = event.callback_query.from_user
+                self.db.add_user(
+                    user_id=user.id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name
+                )
+        except Exception as e:
+            # Log but don't fail the request if user addition fails
+            logger.warning(f"Failed to add user to database: {e}")
 
-        return await handler(event, data)
+        try:
+            return await handler(event, data)
+        except Exception as e:
+            logger.error(f"Error in handler: {e}", exc_info=True)
+            raise
 
 
 async def main():
@@ -66,8 +74,8 @@ async def main():
         logger.error("BOT_TOKEN not found in environment variables!")
         sys.exit(1)
 
-    # Initialize database
-    db = Database(config.db.dsn)
+    # Initialize database with connection pool
+    db = Database(config.db.dsn, min_conn=2, max_conn=20)
 
     # Wait for database to be ready
     max_retries = 30
@@ -76,7 +84,7 @@ async def main():
     for attempt in range(max_retries):
         try:
             db.connect()
-            logger.info("Successfully connected to database")
+            logger.info("Successfully connected to database with connection pool")
             break
         except Exception as e:
             if attempt < max_retries - 1:

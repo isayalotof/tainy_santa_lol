@@ -1,6 +1,7 @@
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery
 import logging
+import asyncio
 
 from bot.database import Database
 from bot.keyboards.inline import (
@@ -123,23 +124,21 @@ async def confirm_draw(callback: CallbackQuery, db: Database, bot: Bot):
         # Mark room as drawn
         db.update_room_drawn(room_id, True)
 
-        # Notify all participants
-        success_count = 0
-        fail_count = 0
-
-        for giver_id, receiver_id in assignments.items():
-            # Get receiver info
-            receiver = db.get_user(receiver_id)
-            if not receiver:
-                continue
-
-            receiver_name = receiver['first_name']
-            if receiver['last_name']:
-                receiver_name += f" {receiver['last_name']}"
-            if receiver['username']:
-                receiver_name += f" (@{receiver['username']})"
-
+        # Notify all participants (parallel)
+        async def send_notification(giver_id: int, receiver_id: int):
+            """Send notification to a single user"""
             try:
+                # Get receiver info
+                receiver = db.get_user(receiver_id)
+                if not receiver:
+                    return False
+
+                receiver_name = receiver['first_name']
+                if receiver['last_name']:
+                    receiver_name += f" {receiver['last_name']}"
+                if receiver['username']:
+                    receiver_name += f" (@{receiver['username']})"
+
                 message_text = (
                     f"🎁 Результаты жеребьёвки в комнате '{room['room_name']}'!\n\n"
                     f"Ты даришь подарок:\n"
@@ -176,15 +175,73 @@ async def confirm_draw(callback: CallbackQuery, db: Database, bot: Bot):
                 
                 message_text += f"🤫 Никому не говори!"
                 
+                # Check message length (Telegram limit is 4096)
+                if len(message_text) > 4096:
+                    # Truncate wishlist if too long
+                    base_length = len(message_text) - len("📋 Вишлист получателя:\n\n") - len("\n\n")
+                    if wishlist_items:
+                        available = 4096 - base_length - 100  # Safety margin
+                        wishlist_text = "📋 Вишлист получателя:\n\n"
+                        for i, item in enumerate(wishlist_items, 1):
+                            item_text = f"{i}. {item['item_name']}"
+                            if item['item_url']:
+                                item_text += f"\n   🔗 {item['item_url']}"
+                            item_text += "\n"
+                            if len(wishlist_text) + len(item_text) > available:
+                                wishlist_text += f"... и ещё {len(wishlist_items) - i + 1} пунктов\n"
+                                break
+                            wishlist_text += item_text
+                        wishlist_text += "\n"
+                        # Rebuild message
+                        message_text = (
+                            f"🎁 Результаты жеребьёвки в комнате '{room['room_name']}'!\n\n"
+                            f"Ты даришь подарок:\n"
+                            f"👤 {receiver_name}\n\n"
+                        )
+                        if room.get('price_range'):
+                            message_text += f"💰 Ценовой диапазон: {room['price_range']}\n\n"
+                        message_text += wishlist_text
+                        if room.get('deadline'):
+                            message_text += f"⏰ Дедлайн жеребьёвки: {room['deadline']}\n\n"
+                        if room.get('gift_time') or room.get('gift_location'):
+                            message_text += "📅 Информация о вручении:\n"
+                            if room.get('gift_time'):
+                                message_text += f"   📅 Время: {room['gift_time']}\n"
+                            if room.get('gift_location'):
+                                message_text += f"   📍 Место: {room['gift_location']}\n"
+                            message_text += "\n"
+                        message_text += f"🤫 Никому не говори!"
+                
                 await bot.send_message(
                     giver_id, 
                     message_text,
                     disable_web_page_preview=False
                 )
-                success_count += 1
+                return True
             except Exception as e:
                 logger.error(f"Failed to notify user {giver_id}: {e}")
-                fail_count += 1
+                return False
+
+        # Send notifications in parallel (batch of 10 at a time to avoid rate limits)
+        all_results = []
+        tasks = []
+        for giver_id, receiver_id in assignments.items():
+            tasks.append(send_notification(giver_id, receiver_id))
+            # Process in batches of 10
+            if len(tasks) >= 10:
+                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+                all_results.extend(batch_results)
+                tasks = []
+                # Small delay between batches to avoid rate limits
+                await asyncio.sleep(0.1)
+        
+        # Process remaining tasks
+        if tasks:
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            all_results.extend(batch_results)
+        
+        success_count = sum(1 for r in all_results if r is True)
+        fail_count = len(all_results) - success_count
 
         # Notify admin about results
         result_text = (

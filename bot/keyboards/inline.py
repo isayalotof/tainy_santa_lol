@@ -46,6 +46,9 @@ def get_room_menu_keyboard(room_id: int, is_admin: bool, is_drawn: bool) -> Inli
             builder.row(
                 InlineKeyboardButton(text="♻️ Перепровести жеребьёвку", callback_data=f"redraw_{room_id}")
             )
+            builder.row(
+                InlineKeyboardButton(text="👀 Посмотреть назначения", callback_data=f"view_assignments_{room_id}")
+            )
 
     builder.row(
         InlineKeyboardButton(text="📋 Мой вишлист", callback_data=f"wishlist_{room_id}")
@@ -91,11 +94,22 @@ def get_members_management_keyboard(room_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_member_list_keyboard(room_id: int, members: list, action: str) -> InlineKeyboardMarkup:
-    """Keyboard for selecting a member"""
+def get_member_list_keyboard(
+    room_id: int,
+    members: list,
+    action: str,
+    page: int = 0,
+    per_page: int = 10
+) -> InlineKeyboardMarkup:
+    """Keyboard for selecting a member with pagination"""
     builder = InlineKeyboardBuilder()
     
-    for member in members:
+    total = len(members)
+    start = page * per_page
+    end = min(start + per_page, total)
+    page_members = members[start:end]
+    
+    for member in page_members:
         name = member['first_name']
         if member.get('last_name'):
             name += f" {member['last_name']}"
@@ -105,9 +119,29 @@ def get_member_list_keyboard(room_id: int, members: list, action: str) -> Inline
         builder.row(
             InlineKeyboardButton(
                 text=name,
-                callback_data=f"{action}_{member['user_id']}"
+                callback_data=f"{action}_{room_id}_{member['user_id']}"
             )
         )
+    
+    # Pagination controls
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(
+            InlineKeyboardButton(
+                text="◀️ Назад",
+                callback_data=f"{action}_page_{room_id}_{page - 1}"
+            )
+        )
+    if end < total:
+        nav_buttons.append(
+            InlineKeyboardButton(
+                text="Вперёд ▶️",
+                callback_data=f"{action}_page_{room_id}_{page + 1}"
+            )
+        )
+    
+    if nav_buttons:
+        builder.row(*nav_buttons)
     
     builder.row(
         InlineKeyboardButton(
@@ -153,9 +187,12 @@ def get_rooms_list_keyboard(rooms: list) -> InlineKeyboardMarkup:
 
     for room in rooms:
         status = "✅" if room['is_drawn'] else "⏳"
+        room_name = room['room_name']
+        if len(room_name) > 30:
+            room_name = room_name[:27] + "..."
         builder.row(
             InlineKeyboardButton(
-                text=f"{status} {room['room_name']}",
+                text=f"{status} {room_name}",
                 callback_data=f"room_{room['room_id']}"
             )
         )
@@ -164,4 +201,41 @@ def get_rooms_list_keyboard(rooms: list) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="◀️ Главное меню", callback_data="main_menu")
     )
 
+    return builder.as_markup()
+
+
+def get_assignments_paginated_keyboard(
+    room_id: int, 
+    page: int = 0, 
+    total_pages: int = 1
+) -> InlineKeyboardMarkup:
+    """Keyboard for paginated assignments view"""
+    builder = InlineKeyboardBuilder()
+    
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(
+            InlineKeyboardButton(
+                text="◀️ Назад",
+                callback_data=f"view_assignments_{room_id}_{page - 1}"
+            )
+        )
+    if page < total_pages - 1:
+        nav_buttons.append(
+            InlineKeyboardButton(
+                text="Вперёд ▶️",
+                callback_data=f"view_assignments_{room_id}_{page + 1}"
+            )
+        )
+    
+    if nav_buttons:
+        builder.row(*nav_buttons)
+    
+    builder.row(
+        InlineKeyboardButton(
+            text="◀️ Назад в комнату",
+            callback_data=f"room_{room_id}"
+        )
+    )
+    
     return builder.as_markup()

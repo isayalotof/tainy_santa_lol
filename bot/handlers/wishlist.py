@@ -84,7 +84,8 @@ def get_wishlist_item_keyboard(room_id: int, item_id: int) -> InlineKeyboardMark
     ~F.data.startswith("wishlist_add_") &
     ~F.data.startswith("wishlist_item_") &
     ~F.data.startswith("wishlist_url_") &
-    ~F.data.startswith("wishlist_delete_")
+    ~F.data.startswith("wishlist_delete_") &
+    ~F.data.startswith("wishlist_skip_")
 )
 async def show_wishlist(callback: CallbackQuery, db: Database):
     """Show user's wishlist for a room"""
@@ -93,7 +94,11 @@ async def show_wishlist(callback: CallbackQuery, db: Database):
     if len(parts) < 2:
         await callback.answer("❌ Ошибка", show_alert=True)
         return
-    room_id = int(parts[1])
+    try:
+        room_id = int(parts[1])
+    except ValueError:
+        await callback.answer("❌ Ошибка формата", show_alert=True)
+        return
     
     room = db.get_room_by_id(room_id)
     if not room:
@@ -121,6 +126,21 @@ async def show_wishlist(callback: CallbackQuery, db: Database):
             if item['item_url']:
                 text += " 🔗"
             text += "\n"
+        
+        # Check message length (Telegram limit is 4096)
+        if len(text) > 4096:
+            # Show only first items that fit
+            text = f"📋 Мой вишлист для комнаты '{room['room_name']}'\n\n"
+            text += "Твой список желаний:\n\n"
+            for i, item in enumerate(items, 1):
+                item_text = f"{i}. {item['item_name']}"
+                if item['item_url']:
+                    item_text += " 🔗"
+                item_text += "\n"
+                if len(text) + len(item_text) > 4000:
+                    text += f"... и ещё {len(items) - i + 1} пунктов\n"
+                    break
+                text += item_text
     
     await callback.message.edit_text(
         text,
@@ -202,7 +222,7 @@ async def skip_url(callback: CallbackQuery, state: FSMContext, db: Database):
     item_name = data.get('item_name')
     
     if not room_id or not item_name:
-        await callback.answer("❌ Ошибка", show_alert=True)
+        await callback.answer("❌ Ошибка. Попробуй добавить пункт заново.", show_alert=True)
         await state.clear()
         return
     
@@ -210,6 +230,11 @@ async def skip_url(callback: CallbackQuery, state: FSMContext, db: Database):
         db.add_wishlist_item(room_id, callback.from_user.id, item_name)
         
         room = db.get_room_by_id(room_id)
+        if not room:
+            await callback.answer("❌ Комната не найдена", show_alert=True)
+            await state.clear()
+            return
+        
         items = db.get_wishlist_items(room_id, callback.from_user.id)
         
         text = f"✅ Пункт добавлен!\n\n📋 Мой вишлист для комнаты '{room['room_name']}'\n\n"
@@ -220,12 +245,22 @@ async def skip_url(callback: CallbackQuery, state: FSMContext, db: Database):
                 if item['item_url']:
                     text += " 🔗"
                 text += "\n"
+        else:
+            text += "Твой список желаний пуст.\nДобавь пункты, чтобы твой Тайный Санта знал, что тебе подарить!"
         
-        await callback.message.edit_text(
-            text,
-            reply_markup=get_wishlist_keyboard(room_id, items)
-        )
-        await callback.answer()
+        # Try to edit message, if fails send new one
+        try:
+            await callback.message.edit_text(
+                text,
+                reply_markup=get_wishlist_keyboard(room_id, items)
+            )
+        except Exception:
+            await callback.message.answer(
+                text,
+                reply_markup=get_wishlist_keyboard(room_id, items)
+            )
+        
+        await callback.answer("✅ Пункт добавлен")
         await state.clear()
         
     except Exception as e:
