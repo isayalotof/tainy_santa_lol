@@ -72,11 +72,9 @@ CREATE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username 
 -- Limit connections per user
 ALTER ROLE postgres WITH CONNECTION LIMIT 50;
 
--- Enable logging for security monitoring
-ALTER SYSTEM SET log_connections = 'on';
-ALTER SYSTEM SET log_disconnections = 'on';
-ALTER SYSTEM SET log_authentication_failures = 'on';
-ALTER SYSTEM SET log_line_prefix = '%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h ';
-
--- Set authentication timeout
-ALTER SYSTEM SET authentication_timeout = '10s';
+-- Note: ALTER SYSTEM commands require PostgreSQL restart and cannot be run in init scripts
+-- To enable logging, add these to postgresql.conf or use environment variables:
+-- log_connections = on
+-- log_disconnections = on  
+-- log_authentication_failures = on
+-- authentication_timeout = 10s
