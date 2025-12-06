@@ -73,8 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username 
 ALTER ROLE postgres WITH CONNECTION LIMIT 50;
 
 -- Note: ALTER SYSTEM commands require PostgreSQL restart and cannot be run in init scripts
--- To enable logging, add these to postgresql.conf or use environment variables:
--- log_connections = on
--- log_disconnections = on  
--- log_authentication_failures = on
+-- Logging is configured in docker-compose.yml via command parameters:
+-- log_connections = on (logs all connection attempts including failures)
+-- log_disconnections = on
 -- authentication_timeout = 10s
